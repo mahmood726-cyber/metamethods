@@ -363,9 +363,21 @@ def proportion_meta(events, totals, method='PFT'):
 
 
 def _backtransform_pft(t, n):
-    """Back-transform Freeman-Tukey double arcsine to proportion."""
-    # Miller (1978) back-transformation
-    z = math.sin(t / 2) ** 2
+    """Back-transform Freeman-Tukey double arcsine to proportion.
+    Miller (1978): uses harmonic mean of sample sizes (n) for correction.
+    """
+    sin_t = math.sin(t)
+    cos_t = math.cos(t)
+    # Handle edge cases where sin(t) is near zero
+    if abs(sin_t) < 1e-10:
+        return 0.0 if cos_t > 0 else 1.0
+    inner = sin_t + (sin_t - 1.0 / sin_t) / n
+    inner_sq = inner * inner
+    if inner_sq > 1:
+        # Clamp: means the correction pushed us past boundary
+        return 0.0 if cos_t > 0 else 1.0
+    sign = -1 if cos_t > 0 else 1
+    z = 0.5 * (1 + sign * math.sqrt(1 - inner_sq))
     return max(0, min(1, z))
 
 
