@@ -330,8 +330,9 @@ def proportion_meta(events, totals, method='PFT'):
 
     # Back-transform to proportion scale
     if method == 'PFT':
-        # Harmonic mean of sample sizes for back-transform
-        n_harm = k / sum(1.0 / totals[i] for i in range(k)) if k > 0 else 1
+        # Harmonic mean of sample sizes for back-transform (guard zero totals)
+        inv_totals = [1.0 / totals[i] for i in range(k) if totals[i] > 0]
+        n_harm = len(inv_totals) / sum(inv_totals) if inv_totals else 1
         pooled_p = _backtransform_pft(theta_re, n_harm)
         ci_lo_p = _backtransform_pft(ci_lo_t, n_harm)
         ci_hi_p = _backtransform_pft(ci_hi_t, n_harm)

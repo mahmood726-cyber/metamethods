@@ -185,6 +185,14 @@ class TestProportionMeta:
         r = proportion_meta(events, totals)
         assert r['per_study'] == [0.1, 0.1]
 
+    def test_zero_total_no_crash(self):
+        """A degenerate study with total=0 must not crash the PFT back-transform."""
+        r = proportion_meta([0], [0], method='PFT')
+        assert r['pooled_proportion'] is not None
+        # Mixed: one valid study alongside a zero-total study
+        r2 = proportion_meta([0, 5], [0, 100], method='PFT')
+        assert r2['pooled_proportion'] is not None
+
     def test_returns_heterogeneity(self):
         events = [10, 15, 8]
         totals = [100, 120, 80]
