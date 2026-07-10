@@ -35,6 +35,14 @@ def evalue(estimate, lo=None, hi=None, measure='RR'):
         dict with 'evalue_point', 'evalue_ci' (based on CI limit closer to 1),
         'interpretation'.
     """
+    # Validate: effect ratios (RR/OR/HR) and CI bounds must be strictly positive.
+    # Guards against math domain errors (sqrt of negative OR) and silent
+    # misleading returns on invalid input.
+    if estimate is None or not math.isfinite(estimate) or estimate <= 0:
+        return {'evalue_point': None, 'evalue_ci': None, 'interpretation': 'Not applicable'}
+    if (lo is not None and lo <= 0) or (hi is not None and hi <= 0):
+        return {'evalue_point': None, 'evalue_ci': None, 'interpretation': 'Not applicable'}
+
     # Convert OR/HR to RR-scale approximation (sqrt transformation for OR)
     if measure == 'OR':
         # Approximate OR -> RR using square-root transformation (VanderWeele 2017)
@@ -90,17 +98,29 @@ def evalue(estimate, lo=None, hi=None, measure='RR'):
 # ============================================================
 
 def doi_plot_lfk(yi, sei):
-    """Compute Doi plot coordinates and LFK index.
+    """Compute Doi plot coordinates and a skewness-based asymmetry index.
 
     The Doi plot plots Z-scores (yi/sei) against |Z| rank, making asymmetry
-    visually clearer than funnel plots. The LFK index quantifies asymmetry.
+    visually clearer than funnel plots.
+
+    NOTE ON THE INDEX: The value returned as 'lfk_index' is a *proxy* for
+    Doi-plot asymmetry — specifically the Fisher skewness of the
+    precision-standardized study residuals. It is NOT the exact
+    Furuya-Kanamori et al. (2018) LFK index, which is defined as the signed
+    difference in area under the two arms of the Doi plot. The two statistics
+    share the property that symmetric data yields ~0, but they live on
+    different scales, so the PASS/WARN/FAIL thresholds (|value| <= 1 / <= 2 /
+    > 2) applied here are HEURISTIC and should not be read as the calibrated
+    Furuya-Kanamori cut-offs. Use for relative/visual screening, not as a
+    substitute for a validated LFK implementation.
 
     Args:
         yi: list of effect sizes
         sei: list of standard errors
 
     Returns:
-        dict with 'lfk_index', 'verdict', 'z_scores', 'normal_quantiles'.
+        dict with 'lfk_index' (skewness proxy, see note above), 'verdict',
+        'z_scores', 'normal_quantiles'.
     """
     k = len(yi)
     if k < 3:
@@ -115,16 +135,17 @@ def doi_plot_lfk(yi, sei):
     # Normal quantiles for the Doi plot
     normal_q = [_qnorm((i + 0.5) / k) for i in range(k)]
 
-    # LFK index: difference between observed and expected areas under the Doi plot
-    # Using the simplified formula: mean of (Z_i - median(Z)) / MAD(Z)
+    # Degenerate-spread guard: if the Z-scores have (near-)zero MAD there is no
+    # asymmetry to measure, so return 0. (med_z/mad_z are used only for this
+    # guard, not for the index itself.)
     med_z = _median(sorted_z)
     mad_z = _median([abs(z - med_z) for z in sorted_z]) * 1.4826  # MAD with consistency constant
 
     if mad_z < 1e-10:
         return {'lfk_index': 0.0, 'verdict': 'PASS', 'z_scores': sorted_z, 'normal_quantiles': normal_q}
 
-    # LFK index: Galbraith-like asymmetry measure
-    # Weighted by precision
+    # Asymmetry proxy = Fisher skewness of precision-standardized residuals
+    # (see the NOTE in the docstring; this is NOT the Furuya-Kanamori area LFK).
     weights = [1.0 / (sei[i] ** 2) if sei[i] > 0 else 0 for i in range(k)]
     w_sum = sum(weights)
     if w_sum == 0:
@@ -287,6 +308,17 @@ def proportion_meta(events, totals, method='PFT'):
     k = len(events)
     if k < 1:
         return {'pooled_proportion': None, 'ci_lo': None, 'ci_hi': None}
+
+    # Validate counts: 0 <= events[i] <= totals[i], totals[i] >= 0.
+    # Guards against math domain errors (asin of >1 when events > totals) and
+    # negation-swapped / malformed inputs that would otherwise hard-crash.
+    if len(totals) != k:
+        return {'pooled_proportion': None, 'ci_lo': None, 'ci_hi': None,
+                'error': 'events and totals must have equal length'}
+    for i in range(k):
+        if totals[i] < 0 or events[i] < 0 or events[i] > totals[i]:
+            return {'pooled_proportion': None, 'ci_lo': None, 'ci_hi': None,
+                    'error': 'events must be within [0, totals] and counts non-negative'}
 
     if method == 'PFT':
         # Freeman-Tukey double arcsine transformation

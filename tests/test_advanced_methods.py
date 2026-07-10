@@ -48,6 +48,23 @@ class TestEvalue:
         r = evalue(3.0, measure='RR')
         assert 'Strong' in r['interpretation'] or 'Moderate' in r['interpretation']
 
+    def test_nonpositive_or_no_crash(self):
+        """Non-positive OR must be guarded, not crash at sqrt (F5 regression)."""
+        r = evalue(-2.0, measure='OR')
+        assert r['evalue_point'] is None
+        assert r['interpretation'] == 'Not applicable'
+
+    def test_nonpositive_estimate_guarded(self):
+        """estimate <= 0 (any measure) returns a guarded, non-crashing result."""
+        assert evalue(0.0, measure='RR')['evalue_point'] is None
+        assert evalue(-1.0, measure='HR')['evalue_point'] is None
+
+    def test_nonpositive_ci_bound_guarded(self):
+        """A non-positive CI bound is guarded rather than propagating garbage."""
+        r = evalue(2.0, lo=-0.5, hi=3.0, measure='RR')
+        assert r['evalue_point'] is None
+        assert r['interpretation'] == 'Not applicable'
+
 
 # ── Doi plot + LFK index ──
 
@@ -199,6 +216,25 @@ class TestProportionMeta:
         r = proportion_meta(events, totals)
         assert 'tau2' in r
         assert 'i2' in r
+
+    def test_events_exceed_totals_guarded(self):
+        """events > totals must be validated, not crash at asin(>1) (F3 regression)."""
+        for meth in ('PFT', 'arcsine', 'logit'):
+            r = proportion_meta([120], [100], method=meth)
+            assert r['pooled_proportion'] is None
+            assert 'error' in r
+
+    def test_negative_counts_guarded(self):
+        """Negative event/total counts return a guarded error rather than crashing."""
+        r = proportion_meta([-5], [100], method='PFT')
+        assert r['pooled_proportion'] is None
+        assert 'error' in r
+
+    def test_mismatched_lengths_guarded(self):
+        """events/totals length mismatch is caught before indexing errors."""
+        r = proportion_meta([10, 5], [100], method='PFT')
+        assert r['pooled_proportion'] is None
+        assert 'error' in r
 
 
 # ── Permutation Test for Heterogeneity ──
